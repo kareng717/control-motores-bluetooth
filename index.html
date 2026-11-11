@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control de motores ESP32</title>
+
+<style>
+body {
+  font-family: Arial;
+  background: #eef2f7;
+  text-align: center;
+  margin: 0;
+  padding: 20px;
+}
+
+h1 { color: #17365d; }
+
+.contenedor {
+  max-width: 430px;
+  margin: auto;
+}
+
+.tarjeta {
+  background: white;
+  padding: 18px;
+  margin: 15px 0;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px #0002;
+}
+
+button {
+  border: 0;
+  border-radius: 9px;
+  padding: 13px;
+  margin: 5px;
+  color: white;
+  background: #1769aa;
+  font-size: 15px;
+  min-width: 90px;
+}
+
+.apagar { background: #c0392b; }
+.dip { background: #566573; }
+.conectar { background: #16834a; }
+
+.estado {
+  font-weight: bold;
+  color: #1769aa;
+}
+</style>
+</head>
+
+<body>
+
+<div class="contenedor">
+
+<h1>Control de motores</h1>
+<p>ESP32-S3 - Control Bluetooth</p>
+
+<button class="conectar" onclick="conectar()">
+Conectar Bluetooth
+</button>
+
+<p id="conexion">Desconectado</p>
+
+<div class="tarjeta">
+<h2>Motor 1</h2>
+<p>Estado: <span class="estado" id="e1">--</span></p>
+
+<button onclick="enviar('M1 A')">Sentido A</button>
+<button onclick="enviar('M1 B')">Sentido B</button>
+<button class="apagar" onclick="enviar('M1 OFF')">Apagar</button>
+<button class="dip" onclick="enviar('M1 DIP')">Modo DIP</button>
+</div>
+
+<div class="tarjeta">
+<h2>Motor 2</h2>
+<p>Estado: <span class="estado" id="e2">--</span></p>
+
+<button onclick="enviar('M2 A')">Sentido A</button>
+<button onclick="enviar('M2 B')">Sentido B</button>
+<button class="apagar" onclick="enviar('M2 OFF')">Apagar</button>
+<button class="dip" onclick="enviar('M2 DIP')">Modo DIP</button>
+</div>
+
+<div class="tarjeta">
+<h2>Control conjunto</h2>
+
+<button onclick="enviar('TODO A')">Ambos A</button>
+<button onclick="enviar('TODO B')">Ambos B</button>
+<button class="apagar" onclick="enviar('TODO OFF')">Apagar ambos</button>
+<button class="dip" onclick="enviar('TODO DIP')">Modo DIP</button>
+</div>
+
+<p id="mensaje">Conecta el ESP32 para comenzar</p>
+
+</div>
+
+<script>
+
+const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const RX_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+const TX_UUID = "beb5483f-36e1-4688-b7f5-ea07361b26a8";
+
+let dispositivo, escritura, lectura;
+
+async function conectar() {
+  try {
+    if (!navigator.bluetooth) {
+      alert("Abre esta página desde Chrome en Android mediante HTTPS.");
+      return;
+    }
+
+    dispositivo = await navigator.bluetooth.requestDevice({
+      filters: [{ name: "ESP32-MOTORES" }],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    dispositivo.addEventListener(
+      "gattserverdisconnected",
+      desconectado
+    );
+
+    const servidor = await dispositivo.gatt.connect();
+    const servicio = await servidor.getPrimaryService(SERVICE_UUID);
+
+    escritura = await servicio.getCharacteristic(RX_UUID);
+    lectura = await servicio.getCharacteristic(TX_UUID);
+
+    await lectura.startNotifications();
+    lectura.addEventListener(
+      "characteristicvaluechanged",
+      recibirEstado
+    );
+
+    document.getElementById("conexion").innerText =
+      "Bluetooth conectado";
+
+    document.getElementById("mensaje").innerText =
+      "Control listo";
+
+  } catch (error) {
+    document.getElementById("mensaje").innerText =
+      "Error: " + error.message;
+  }
+}
+
+async function enviar(comando) {
+  if (!escritura) {
+    alert("Primero conecta el Bluetooth.");
+    return;
+  }
+
+  try {
+    const datos = new TextEncoder().encode(comando);
+    await escritura.writeValue(datos);
+
+    document.getElementById("mensaje").innerText =
+      "Comando enviado: " + comando;
+
+  } catch (error) {
+    document.getElementById("mensaje").innerText =
+      "Error al enviar: " + error.message;
+  }
+}
+
+function recibirEstado(evento) {
+  const datos = new TextDecoder().decode(evento.target.value);
+
+  try {
+    const estado = JSON.parse(datos);
+
+    document.getElementById("e1").innerText =
+      estado.motor1;
+
+    document.getElementById("e2").innerText =
+      estado.motor2;
+
+  } catch (error) {}
+}
+
+function desconectado() {
+  escritura = null;
+  lectura = null;
+
+  document.getElementById("conexion").innerText =
+    "Bluetooth desconectado";
+
+  document.getElementById("mensaje").innerText =
+    "Conexión perdida";
+}
+
+</script>
+
+</body>
+</html>
